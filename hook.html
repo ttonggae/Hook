@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Hookshot - Delayed Reboot</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #020205; color: white; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 20px; right: 40px; font-size: 28px; font-weight: bold; color: #ff00ff; text-shadow: 0 0 10px #ff00ff; z-index: 10; }
+        
+        /* 게임 오버 창 스타일 */
+        #msg { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            text-align: center; display: none; background: rgba(5, 5, 15, 0.98); padding: 50px; 
+            border: 3px solid #ff3333; border-radius: 10px; box-shadow: 0 0 30px #ff3333; z-index: 100; 
+        }
+        .final-score { font-size: 48px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin: 20px 0; }
+        
+        /* 재시작 버튼 네온 스타일 */
+        #rebootBtn {
+            display: none; margin-top: 25px; padding: 15px 30px; background: transparent;
+            color: #ff3333; border: 2px solid #ff3333; font-family: inherit; font-size: 20px;
+            font-weight: bold; cursor: pointer; transition: 0.3s; text-shadow: 0 0 5px #ff3333;
+            box-shadow: 0 0 10px rgba(255, 51, 51, 0.3);
+        }
+        #rebootBtn:hover {
+            background: #ff3333; color: white; box-shadow: 0 0 25px #ff3333;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">DIST: <span id="score">0</span>m</div>
+    <div id="msg">
+        <h1 style="color: #ff3333; text-shadow: 0 0 10px #ff3333; margin: 0;">CRITICAL FAILURE</h1>
+        <div class="final-score">RECORD: <span id="finalScoreText">0</span>m</div>
+        <button id="rebootBtn" onclick="location.reload()">[ REBOOT SYSTEM ]</button>
+        <p id="rebootHint" style="color: #555; margin-top: 15px;">Initializing recovery...</p>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null, windGain = null;
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new AudioContext();
+            const bufferSize = 2 * audioCtx.sampleRate;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+            const windNoiseNode = audioCtx.createBufferSource();
+            windNoiseNode.buffer = noiseBuffer; windNoiseNode.loop = true;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass'; filter.frequency.value = 800;
+            windGain = audioCtx.createGain(); windGain.gain.value = 0;
+            windNoiseNode.connect(filter); filter.connect(windGain); windGain.connect(audioCtx.destination);
+            windNoiseNode.start();
+        }
+
+        function playSound(freq, type, duration, vol) {
+            if (!audioCtx || isGameOver) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            g.gain.setValueAtTime(vol, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playGlitchDeathSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            for(let i=0; i<3; i++) {
+                const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+                osc.type = i % 2 === 0 ? 'sawtooth' : 'square';
+                osc.frequency.setValueAtTime(2000 + Math.random()*2000, now + (i * 0.05));
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.15 + (i * 0.05));
+                g.gain.setValueAtTime(0.2, now + (i * 0.05));
+                g.gain.linearRampToValueAtTime(0, now + 0.1 + (i * 0.05));
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(now + (i * 0.05)); osc.stop(now + 0.2 + (i * 0.05));
+            }
+        }
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const msgElement = document.getElementById('msg');
+        const finalScoreText = document.getElementById('finalScoreText');
+        const rebootBtn = document.getElementById('rebootBtn');
+        const rebootHint = document.getElementById('rebootHint');
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+
+        let score = 0, isGameOver = false, isStarted = false, canReboot = false;
+        let cameraX = 0, deadlineX = -600; 
+        let mousePos = { x: 0, y: 0 }, guideOpacity = 1;
+        let particles = [];
+        const gravity = 0.6, jumpForce = -16, maxHookDist = 700; 
+
+        const player = { x: 400, y: canvas.height / 2, vx: 0, vy: 0, size: 22, color: '#00ffff', onGround: false, alive: true };
+        const hook = { active: false, x: 0, y: 0, length: 0 };
+        const obstacles = [];
+        const keys = {};
+
+        obstacles.push({ x: 0, y: canvas.height/2 + 100, w: 1200, h: 40, type: 'platform' });
+
+        window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            // 게임 오버 상태이고 1초가 지나 버튼이 활성화된 경우만 스페이스바로 재시작 가능
+            if (isGameOver && canReboot && e.code === 'Space') location.reload();
+            if (!isStarted && (keys['KeyA'] || keys['KeyD'] || keys['Space'])) isStarted = true;
+            if (!isGameOver && e.code === 'Space' && player.onGround) playSound(400, 'sine', 0.2, 0.4);
+        });
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        window.addEventListener('mousedown', e => {
+            initAudio();
+            if (isGameOver || !player.alive) return;
+            if (!isStarted) isStarted = true;
+            const startX = player.x + 11, startY = player.y + 11;
+            const mx = e.clientX + cameraX, my = e.clientY;
+            const angle = Math.atan2(my - startY, mx - startX);
+            const targetX = startX + Math.cos(angle) * maxHookDist;
+            const targetY = startY + Math.sin(angle) * maxHookDist;
+            let closestHit = null, minT = 2.0;
+            for (let obs of obstacles) {
+                const hit = getRayIntersection(startX, startY, targetX, targetY, obs);
+                if (hit && hit.t < minT) { minT = hit.t; closestHit = hit; }
+            }
+            if (closestHit) {
+                hook.active = true; hook.x = closestHit.x; hook.y = closestHit.y;
+                hook.length = Math.sqrt(Math.pow(hook.x - startX, 2) + Math.pow(hook.y - startY, 2));
+                playSound(800, 'square', 0.05, 0.2);
+            } else { playSound(200, 'sawtooth', 0.1, 0.1); }
+        });
+        window.addEventListener('mouseup', () => { hook.active = false; });
+
+        function createExplosion(x, y) {
+            for (let i = 0; i < 20; i++) {
+                particles.push({
+                    x: x, y: y, vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12,
+                    size: Math.random() * 6 + 2, life: 1.0, color: Math.random() > 0.5 ? '#ff00ff' : '#00ffff'
+                });
+            }
+        }
+
+        function getRayIntersection(x1, y1, x2, y2, obs) {
+            const dx = x2 - x1, dy = y2 - y1;
+            const left = obs.x, right = obs.x + obs.w, top = obs.y, bottom = obs.y + obs.h;
+            let tMin = -Infinity, tMax = Infinity;
+            if (dx !== 0) {
+                let t1 = (left - x1) / dx, t2 = (right - x1) / dx;
+                tMin = Math.max(tMin, Math.min(t1, t2)); tMax = Math.min(tMax, Math.max(t1, t2));
+            } else if (x1 < left || x1 > right) return null;
+            if (dy !== 0) {
+                let t1 = (top - y1) / dy, t2 = (bottom - y1) / dy;
+                tMin = Math.max(tMin, Math.min(t1, t2)); tMax = Math.min(tMax, Math.max(t1, t2));
+            } else if (y1 < top || y1 > bottom) return null;
+            if (tMax >= tMin && tMax > 0 && tMin < 1) return { x: x1 + (tMin < 0 ? 0 : tMin) * dx, y: y1 + (tMin < 0 ? 0 : tMin) * dy, t: tMin < 0 ? 0 : tMin };
+            return null;
+        }
+
+        function update() {
+            if (isGameOver) {
+                particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; });
+                return;
+            }
+            if (!isStarted) return;
+
+            if (keys['Space'] && player.onGround) { player.vy = jumpForce; player.onGround = false; }
+            if (keys['KeyA']) player.vx -= 0.8; if (keys['KeyD']) player.vx += 0.8;
+            player.vy += gravity; player.vx *= 0.97; player.vy *= 0.99;
+
+            if (hook.active) {
+                if (keys['ShiftLeft'] || keys['ShiftRight']) hook.length = Math.max(20, hook.length - 11.25);
+                const dx = (player.x + 11) - hook.x, dy = (player.y + 11) - hook.y, dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > hook.length) {
+                    const nx = dx / dist, ny = dy / dist;
+                    player.x = hook.x + nx * hook.length - 11; player.y = hook.y + ny * hook.length - 11;
+                    const dot = player.vx * nx + player.vy * ny;
+                    if (dot > 0) { player.vx -= dot * nx; player.vy -= dot * ny; }
+                    player.onGround = false;
+                }
+            }
+
+            player.x += player.vx; checkCollisions(true); player.y += player.vy; checkCollisions(false);
+
+            if (windGain) {
+                const speed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+                const targetVol = (!player.onGround && speed > 5) ? Math.min(0.25, speed * 0.012) : 0;
+                windGain.gain.setTargetAtTime(targetVol, audioCtx.currentTime, 0.1);
+            }
+
+            cameraX += (player.x - cameraX - 400) * 0.15;
+            deadlineX += 6.5 + (Math.max(0, player.x - deadlineX) * 0.012);
+
+            if (player.y > canvas.height + 500 || player.x < deadlineX) finishGame(player.x < deadlineX ? "VOID DETECTED" : "DATA FALLOUT");
+            if (lastSpawnX < cameraX + canvas.width + 800) spawnChunk();
+            
+            score = Math.floor(player.x / 10);
+            scoreElement.innerText = score > 0 ? score : 0;
+            if (guideOpacity > 0) guideOpacity -= 0.015;
+        }
+
+        let lastSpawnX = 1200;
+        function spawnChunk() {
+            const spacing = 300 + Math.random() * 300;
+            const type = Math.random() > 0.35 ? 'platform' : 'danger';
+            let w, h, y;
+            if (type === 'danger') { w = 60; h = 250 + Math.random() * 150; y = 0; }
+            else { w = 200 + Math.random() * 200; h = 35; y = 250 + Math.random() * (canvas.height - 400); }
+            obstacles.push({ x: lastSpawnX + spacing, y: y, w: w, h: h, type: type });
+            lastSpawnX += spacing;
+        }
+
+        function checkCollisions(isXAxis) {
+            for (let obs of obstacles) {
+                if (player.x < obs.x + obs.w && player.x + player.size > obs.x &&
+                    player.y < obs.y + obs.h && player.y + player.size > obs.y) {
+                    if (obs.type === 'danger') { finishGame("CONNECTION LOST"); return; }
+                    if (isXAxis) {
+                        if (player.vx > 0) { player.x = obs.x - player.size; player.vx = 0; }
+                        else { player.x = obs.x + obs.w; player.vx = 0; }
+                    } else {
+                        if (player.vy > 0) { player.y = obs.y - player.size; player.vy = 0; player.onGround = true; }
+                        else { player.y = obs.y + obs.h; player.vy = 0; }
+                    }
+                }
+            }
+        }
+
+        function finishGame(r) { 
+            if(isGameOver) return;
+            isGameOver = true; player.alive = false;
+            if (windGain) windGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            playGlitchDeathSound();
+            createExplosion(player.x + 11 - cameraX, player.y + 11);
+            finalScoreText.innerText = score > 0 ? score : 0;
+            document.querySelector('#msg h1').innerText = r; 
+            msgElement.style.display = 'block'; 
+
+            // 1초 뒤에 다시하기 버튼 활성화
+            setTimeout(() => {
+                canReboot = true;
+                rebootBtn.style.display = 'inline-block';
+                rebootHint.innerText = "Press [Space] or Click to Reboot";
+                rebootHint.style.color = "#aaa";
+            }, 1000);
+        }
+
+        function draw() {
+            ctx.fillStyle = '#020205'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, deadlineX - cameraX, canvas.height);
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(deadlineX - cameraX, 0); ctx.lineTo(deadlineX - cameraX, canvas.height); ctx.stroke();
+
+            const psx = player.x - cameraX + 11, psy = player.y + 11;
+
+            if (!isGameOver && !hook.active) {
+                const angle = Math.atan2(mousePos.y - psy, mousePos.x + cameraX - (player.x + 11));
+                const targetX = psx + Math.cos(angle) * maxHookDist;
+                const targetY = psy + Math.sin(angle) * maxHookDist;
+                let canHook = false;
+                for (let obs of obstacles) if (getRayIntersection(player.x + 11, player.y + 11, player.x + 11 + Math.cos(angle) * maxHookDist, player.y + 11 + Math.sin(angle) * maxHookDist, obs)) { canHook = true; break; }
+                ctx.save(); ctx.beginPath(); ctx.setLineDash([8, 6]); ctx.moveTo(psx, psy); ctx.lineTo(targetX, targetY);
+                ctx.strokeStyle = canHook ? '#ffff00' : '#ff0000'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
+            }
+
+            obstacles.forEach(obs => {
+                const sx = obs.x - cameraX;
+                ctx.shadowBlur = 10; ctx.shadowColor = obs.type === 'danger' ? '#ff3333' : '#00ff00';
+                ctx.fillStyle = obs.type === 'danger' ? '#200000' : '#001a00';
+                ctx.strokeStyle = obs.type === 'danger' ? '#ff3333' : '#00ff00';
+                ctx.lineWidth = 2; ctx.fillRect(sx, obs.y, obs.w, obs.h); ctx.strokeRect(sx, obs.y, obs.w, obs.h);
+            });
+
+            if (player.alive) {
+                ctx.shadowBlur = 15; ctx.shadowColor = player.color; ctx.fillStyle = player.color;
+                ctx.fillRect(psx-11, psy-11, player.size, player.size);
+            }
+            particles.forEach(p => {
+                ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+                ctx.fillStyle = `rgba(0, 255, 255, ${p.life})`;
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+            });
+
+            if (guideOpacity > 0) {
+                ctx.shadowBlur = 10; ctx.shadowColor = '#ff3333'; ctx.strokeStyle = `rgba(255, 51, 51, ${guideOpacity})`;
+                ctx.strokeRect(psx - 120, psy - 135, 240, 95);
+                ctx.fillStyle = `rgba(255, 51, 51, ${guideOpacity})`; ctx.font = "bold 13px monospace"; ctx.textAlign = "center";
+                ctx.fillText("A, D: MOVE / SPACE: JUMP", psx, psy - 110);
+                ctx.fillText("CLICK: HOOK / SHIFT: PULL", psx, psy - 90);
+                ctx.fillText("(GO RIGHT TO START)", psx, psy - 70);
+            }
+
+            if (hook.active && player.alive) {
+                ctx.shadowBlur = 15; ctx.shadowColor = '#ffff00'; ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(psx, psy); ctx.lineTo(hook.x - cameraX, hook.y); ctx.stroke();
+            }
+
+            ctx.shadowBlur = 0;
+            requestAnimationFrame(draw); update();
+        }
+        draw();
+    </script>
+</body>
+</html>
