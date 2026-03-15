@@ -12,73 +12,74 @@
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
             text-align: center; display: none; background: rgba(5, 5, 15, 0.98); padding: 40px; 
             border: 3px solid #ff3333; border-radius: 10px; box-shadow: 0 0 30px #ff3333; z-index: 100;
-            min-width: 320px;
+            min-width: 350px;
         }
-        .final-score { font-size: 40px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin: 15px 0; }
+        .final-score { font-size: 44px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin: 15px 0; }
         
-        /* 랭킹 스타일 */
-        #leaderboard { margin: 20px 0; border-top: 1px solid #333; padding-top: 15px; }
-        #rankList { list-style: none; padding: 0; margin: 10px 0; text-align: left; max-height: 200px; overflow-y: auto; }
-        #rankList li { font-size: 14px; margin-bottom: 5px; color: #ffff00; display: flex; justify-content: space-between; }
-        #rankList li span.name { color: #fff; }
+        #leaderboard { margin: 20px 0; border-top: 1px solid #444; padding-top: 15px; }
+        #rankList { list-style: none; padding: 0; margin: 10px 0; text-align: left; }
+        #rankList li { font-size: 15px; margin-bottom: 6px; color: #ffff00; display: flex; justify-content: space-between; }
+        #rankList li span.name { color: #fff; font-weight: bold; }
 
-        /* 입력창 & 버튼 */
         #nameInputArea { margin-bottom: 20px; }
         #playerName { 
-            background: #111; border: 1px solid #00ffff; color: #fff; padding: 10px; 
-            font-family: inherit; width: 150px; outline: none; text-align: center;
+            background: #111; border: 2px solid #00ffff; color: #fff; padding: 10px; 
+            font-family: inherit; width: 160px; outline: none; text-align: center; font-size: 16px;
         }
         #submitBtn, #rebootBtn {
-            padding: 10px 20px; background: transparent; color: #ff3333; border: 2px solid #ff3333;
+            padding: 12px 24px; background: transparent; color: #00ffff; border: 2px solid #00ffff;
             font-family: inherit; font-weight: bold; cursor: pointer; transition: 0.3s; margin: 5px;
         }
-        #submitBtn { color: #00ffff; border-color: #00ffff; }
         #submitBtn:hover { background: #00ffff; color: #000; box-shadow: 0 0 15px #00ffff; }
+        #rebootBtn { color: #ff3333; border-color: #ff3333; display: none; }
         #rebootBtn:hover { background: #ff3333; color: white; box-shadow: 0 0 15px #ff3333; }
-        #rebootBtn { display: none; }
     </style>
 </head>
 <body>
     <div id="ui">DIST: <span id="score">0</span>m</div>
     <div id="msg">
-        <h1 id="statusText" style="color: #ff3333; text-shadow: 0 0 10px #ff3333; margin: 0; font-size: 24px;">SYSTEM CRASH</h1>
+        <h1 style="color: #ff3333; text-shadow: 0 0 10px #ff3333; margin: 0; font-size: 28px;">SYSTEM CRASHED</h1>
         <div class="final-score"><span id="finalScoreText">0</span>m</div>
         
         <div id="nameInputArea">
-            <input type="text" id="playerName" placeholder="YOUR NAME" maxlength="8">
+            <input type="text" id="playerName" placeholder="ENTER NAME" maxlength="8">
             <button id="submitBtn">UPLOAD SCORE</button>
         </div>
 
         <div id="leaderboard">
-            <div style="font-size: 14px; color: #ff00ff; margin-bottom: 10px;">GLOBAL TOP 10</div>
-            <ul id="rankList"><li>Loading ranks...</li></ul>
+            <div style="font-size: 14px; color: #ff00ff; margin-bottom: 10px; letter-spacing: 2px;">GLOBAL TOP 10</div>
+            <ul id="rankList"><li>Syncing data...</li></ul>
         </div>
 
-        <button id="rebootBtn" onclick="location.reload()">[ REBOOT ]</button>
+        <button id="rebootBtn" onclick="location.reload()">[ REBOOT SYSTEM ]</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
         import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToLast } 
                from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
+        // 사용자님이 보내주신 최신 이미지 설정값 반영
         const firebaseConfig = {
-            apiKey: "AIzaSyBBBFwrlHqn0o67pnx2Fzq70YD_NOv_sxo",
+            apiKey: "AIzaSyBBBFWrlHqn0o67pnx2Fzq70YD_NOv_sxo",
             authDomain: "hook-ee923.firebaseapp.com",
             projectId: "hook-ee923",
-            storageBucket: "hook-ee923.appspot.com",
+            storageBucket: "hook-ee923.firebasestorage.app",
             messagingSenderId: "1043446793127",
-            appId: "1:1043446793127:web:9c33c0a43520aaf6f92c82",
-            measurementId: "G-M99ZDM4BMK",
-            databaseURL: "https://hook-ee923-default-rtdb.asia-northeast3.firebasedatabase.app" // 서울 리전 경로
+            appId: "1:1043446793127:web:32112b9c8e5cb29ef92c82",
+            measurementId: "G-XZ2PG2JLDC",
+            // 미국 리전 전용 데이터베이스 주소
+            databaseURL: "https://hook-ee923-default-rtdb.firebaseio.com/"
         };
 
         const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
         const db = getDatabase(app);
 
-        // --- 게임 로직 변수 ---
+        // --- 게임 엔진 ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
@@ -92,14 +93,14 @@
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
         let score = 0, isGameOver = false, isStarted = false, canReboot = false;
-        let cameraX = 0, deadlineX = -600, mousePos = { x: 0, y: 0 }, guideOpacity = 1;
+        let cameraX = 0, deadlineX = -600, mousePos = { x: 0, y: 0 };
         let particles = [], obstacles = [], keys = {};
         const gravity = 0.6, jumpForce = -16, maxHookDist = 700;
         const player = { x: 400, y: canvas.height/2, vx: 0, vy: 0, size: 22, color: '#00ffff', onGround: false, alive: true };
         const hook = { active: false, x: 0, y: 0, length: 0 };
 
-        // 사운드 관련
         let audioCtx, windGain;
+
         function initAudio() {
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -123,23 +124,25 @@
         }
 
         function playPazic() {
+            if (!audioCtx) return;
             const now = audioCtx.currentTime;
             for(let i=0; i<3; i++){
                 const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-                o.type = i%2===0?'sawtooth':'square'; o.frequency.setValueAtTime(2000+Math.random()*2000, now+(i*0.05));
-                g.gain.setValueAtTime(0.2, now+(i*0.05)); g.gain.linearRampToValueAtTime(0, now+0.1+(i*0.05));
-                o.connect(g); g.connect(audioCtx.destination); o.start(now+(i*0.05)); o.stop(now+0.2+(i*0.05));
+                o.type = i%2===0?'sawtooth':'square';
+                o.frequency.setValueAtTime(2000 + Math.random()*2000, now + (i*0.05));
+                g.gain.setValueAtTime(0.2, now + (i*0.05));
+                g.gain.linearRampToValueAtTime(0, now + 0.1 + (i*0.05));
+                o.connect(g); g.connect(audioCtx.destination);
+                o.start(now + (i*0.05)); o.stop(now + 0.2 + (i*0.05));
             }
         }
 
-        // --- 초기화 및 루프 ---
         obstacles.push({ x: 0, y: canvas.height/2 + 100, w: 1200, h: 40, type: 'platform' });
         window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
         window.addEventListener('keydown', e => {
             keys[e.code] = true;
             if (isGameOver && canReboot && e.code === 'Space') location.reload();
             if (!isStarted && (keys['KeyA'] || keys['KeyD'] || keys['Space'])) isStarted = true;
-            if (!isGameOver && e.code === 'Space' && player.onGround) playSound('sine', 400, 0.2, 0.4);
         });
         window.addEventListener('keyup', e => keys[e.code] = false);
 
@@ -154,7 +157,7 @@
             }
             if (hit) {
                 hook.active = true; hook.x = hit.x; hook.y = hit.y;
-                hook.length = Math.sqrt(Math.pow(hook.x-sx, 2) + Math.pow(hook.y-sy, 2));
+                hook.length = Math.sqrt((hook.x-sx)**2 + (hook.y-sy)**2);
                 playSound('square', 800, 0.05, 0.2);
             } else { playSound('sawtooth', 200, 0.1, 0.1); }
         });
@@ -173,7 +176,7 @@
         function update() {
             if (isGameOver) { particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; }); return; }
             if (!isStarted) return;
-            if (keys['Space'] && player.onGround) { player.vy = jumpForce; player.onGround = false; }
+            if (keys['Space'] && player.onGround) { player.vy = jumpForce; player.onGround = false; playSound('sine', 400, 0.2, 0.4); }
             if (keys['KeyA']) player.vx -= 0.8; if (keys['KeyD']) player.vx += 0.8;
             player.vy += gravity; player.vx *= 0.97; player.vy *= 0.99;
             if (hook.active) {
@@ -195,7 +198,6 @@
             if (player.y > canvas.height + 500 || player.x < deadlineX) finishGame();
             if (lastSpawnX < cameraX + canvas.width + 800) spawnChunk();
             score = Math.max(0, Math.floor(player.x / 10)); scoreElement.innerText = score;
-            if (guideOpacity > 0) guideOpacity -= 0.015;
         }
 
         let lastSpawnX = 1200;
@@ -218,19 +220,17 @@
             }
         }
 
-        // --- Firebase 랭킹 시스템 ---
         function finishGame() {
             if(isGameOver) return; isGameOver = true; player.alive = false;
             if (windGain) windGain.gain.setValueAtTime(0, audioCtx.currentTime);
             playPazic();
-            for (let i=0; i<20; i++) particles.push({ x: player.x+11-cameraX, y: player.y+11, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12, size: Math.random()*6+2, life: 1, color: Math.random()>0.5?'#ff00ff':'#00ffff' });
+            for (let i=0; i<25; i++) particles.push({ x: player.x+11-cameraX, y: player.y+11, vx: (Math.random()-0.5)*14, vy: (Math.random()-0.5)*14, size: Math.random()*7+2, life: 1, color: Math.random()>0.5?'#ff00ff':'#00ffff' });
             finalScoreText.innerText = score;
             msgElement.style.display = 'block';
             loadRanking();
             setTimeout(() => { canReboot = true; rebootBtn.style.display = 'inline-block'; }, 1000);
         }
 
-        // 랭킹 불러오기
         function loadRanking() {
             const scoresRef = query(ref(db, 'scores'), orderByChild('score'), limitToLast(10));
             onValue(scoresRef, (snapshot) => {
@@ -238,20 +238,16 @@
                 const sorted = [];
                 for (let id in data) sorted.push(data[id]);
                 sorted.sort((a, b) => b.score - a.score);
-                
-                rankListUI.innerHTML = sorted.map((s, i) => 
-                    `<li><span>${i+1}. <span class="name">${s.name}</span></span> <span>${s.score}m</span></li>`
-                ).join('') || "<li>No scores yet</li>";
+                rankListUI.innerHTML = sorted.map((s, i) => `<li><span>${i+1}. <span class="name">${s.name}</span></span> <span>${s.score}m</span></li>`).join('') || "<li>No data yet</li>";
             });
         }
 
-        // 점수 업로드
         submitBtn.onclick = () => {
-            const name = playerNameInput.value.trim() || "ANON";
+            const name = playerNameInput.value.trim().toUpperCase() || "ANON";
             if (score <= 0) return;
-            const newScoreRef = push(ref(db, 'scores'));
-            set(newScoreRef, { name: name, score: score }).then(() => {
-                document.getElementById('nameInputArea').innerHTML = "<p style='color:#00ffff'>UPLOADED!</p>";
+            const newRef = push(ref(db, 'scores'));
+            set(newRef, { name: name, score: score }).then(() => {
+                document.getElementById('nameInputArea').innerHTML = "<p style='color:#00ffff; font-weight:bold;'>SCORE SYNCHRONIZED</p>";
             });
         };
 
@@ -268,7 +264,7 @@
                 let can = false;
                 for (let o of obstacles) if (getRayIntersection(player.x+11, player.y+11, player.x+11+Math.cos(ang)*maxHookDist, player.y+11+Math.sin(ang)*maxHookDist, o)) { can = true; break; }
                 ctx.save(); ctx.beginPath(); ctx.setLineDash([8, 6]); ctx.moveTo(px, py); ctx.lineTo(px+Math.cos(ang)*maxHookDist, py+Math.sin(ang)*maxHookDist);
-                ctx.strokeStyle = can ? '#ffff00' : '#ff0000'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
+                ctx.strokeStyle = can ? '#ffff00' : '#440000'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
             }
 
             obstacles.forEach(o => {
