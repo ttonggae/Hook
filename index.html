@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Hookshot: Protocol</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="ranking-left" class="ranking-panel"></div>
+    <div id="ranking-right" class="ranking-panel"></div>
+
+    <div id="main-menu" class="menu-layer">
+        <h1 class="neon-title">NEON HOOKSHOT</h1>
+        <div class="menu-buttons">
+            <button onclick="startGame('infinite')">INFINITE MODE</button>
+            <button onclick="showMapSelection()">SPEEDRUN MODE</button>
+        </div>
+    </div>
+
+    <div id="map-selection" class="menu-layer" style="display: none;">
+        <h1 class="neon-title" style="font-size: 40px;">SELECT SECTOR</h1>
+        <div class="menu-buttons">
+            <button onclick="startGame('speedrun', 'map1')">MAP 1: NEON DASH</button>
+            <button onclick="backToMain()" style="border-color: #555; color: #555;">BACK</button>
+        </div>
+    </div>
+
+    <div id="game-ui" style="display: none;">
+        <div id="hud">
+            <span id="mode-label">MODE: INFINITE</span> | 
+            <span id="score">0</span><span id="unit">m</span>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="msg">
+        <h1 id="status-title">SYSTEM CRASHED</h1>
+        <div class="final-score"><span id="finalScoreText">0</span></div>
+        
+        <div id="nameInputArea" style="display: none;">
+            <input type="text" id="playerName" placeholder="ENTER NAME" maxlength="8">
+            <button id="submitBtn">UPLOAD DATA</button>
+        </div>
+        
+        <button id="rebootBtn" onclick="location.reload()">[ RETURN TO MENU ]</button>
+        <div id="restart-guide">PRESS SPACE TO RESTART</div>
+    </div>
+
+    <script type="module" src="game.js"></script>
+</body>
+</html>

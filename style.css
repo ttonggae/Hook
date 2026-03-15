@@ -1,0 +1,75 @@
+body { margin: 0; overflow: hidden; background: #020205; color: white; font-family: 'Courier New', monospace; }
+canvas { display: block; }
+
+.menu-layer { 
+    position: absolute; width: 100vw; height: 100vh; 
+    display: flex; flex-direction: column; justify-content: center; 
+    align-items: center; z-index: 200; background: rgba(2, 2, 5, 0.85); 
+}
+
+.neon-title { font-size: 60px; color: #00ffff; text-shadow: 0 0 20px #00ffff; margin-bottom: 40px; text-align: center; }
+
+.menu-buttons button { 
+    background: transparent; border: 2px solid #ff00ff; color: #ff00ff; 
+    padding: 15px 40px; font-size: 20px; cursor: pointer; margin: 10px; 
+    transition: 0.3s; width: 320px; font-family: inherit; font-weight: bold;
+}
+.menu-buttons button:hover { background: #ff00ff; color: #000; box-shadow: 0 0 20px #ff00ff; }
+
+#hud { position: absolute; top: 20px; right: 40px; font-size: 24px; color: #ff00ff; text-shadow: 0 0 10px #ff00ff; z-index: 10; font-weight: bold; }
+
+#msg { 
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+    text-align: center; display: none; background: rgba(5, 5, 15, 0.98); 
+    padding: 40px; border: 3px solid #ff3333; box-shadow: 0 0 30px #ff3333; 
+    z-index: 100; min-width: 350px; border-radius: 10px;
+}
+
+#status-title { color: #ff3333; text-shadow: 0 0 10px #ff3333; margin: 0; font-size: 32px; }
+.final-score { font-size: 44px; color: #00ffff; margin: 15px 0; text-shadow: 0 0 15px #00ffff; }
+
+#playerName { background: #111; border: 2px solid #00ffff; color: white; padding: 10px; text-align: center; outline: none; margin-bottom: 10px; font-family: inherit; font-weight: bold; font-size: 16px;}
+#submitBtn { background: transparent; color: #00ffff; border: 2px solid #00ffff; padding: 10px 20px; font-weight: bold; cursor: pointer; transition: 0.3s; font-family: inherit; font-size: 16px;}
+#submitBtn:hover { background: #00ffff; color: #000; box-shadow: 0 0 15px #00ffff;}
+
+#rebootBtn { display: none; margin-top: 10px; background: transparent; color: #ff3333; border: 2px solid #ff3333; padding: 10px 20px; cursor: pointer; font-family: inherit; font-weight: bold; transition: 0.3s; }
+#rebootBtn:hover { background: #ff3333; color: white; box-shadow: 0 0 15px #ff3333;}
+
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+#restart-guide { display: none; color: #ffff00; margin-top: 20px; font-size: 16px; font-weight: bold; animation: blink 1.5s infinite; letter-spacing: 1px; }
+
+/* 🌟 사이드 랭킹 패널 스타일 (z-index를 250으로 올려서 선글라스 현상 해결!) */
+.ranking-panel {
+    position: absolute; top: 20px; width: 280px; 
+    background: rgba(5, 10, 15, 0.8); 
+    border: 2px solid #00ffff; 
+    box-shadow: 0 0 20px #00ffff, inset 0 0 10px rgba(0, 255, 255, 0.3); 
+    padding: 15px; z-index: 250; /* 핵심 수정: 메뉴 배경(200)보다 무조건 앞으로! */
+    display: none; flex-direction: column; 
+    max-height: 85vh; overflow-y: auto; pointer-events: none;
+    border-radius: 12px;
+}
+#ranking-left { left: 20px; }
+#ranking-right { 
+    right: 20px; border-color: #ff00ff; 
+    background: rgba(15, 5, 15, 0.8); 
+    box-shadow: 0 0 20px #ff00ff, inset 0 0 10px rgba(255, 0, 255, 0.3); 
+}
+
+.ranking-title { 
+    font-size: 22px; color: #ffffff; text-shadow: 0 0 10px #ffffff; 
+    text-align: center; margin-bottom: 15px; border-bottom: 2px solid #fff; 
+    padding-bottom: 8px; font-weight: bold; letter-spacing: 1px;
+}
+
+.ranking-list { list-style: none; padding: 0; margin: 0; }
+.ranking-list li { 
+    font-size: 17px; margin-bottom: 12px; color: #ffff00; 
+    display: flex; justify-content: space-between; font-weight: bold;
+    text-shadow: 0 0 8px rgba(0, 0, 0, 1); 
+}
+.map-title { 
+    color: #ff00ff; margin-top: 20px; margin-bottom: 10px; 
+    font-weight: bold; font-size: 18px; text-align: center; letter-spacing: 2px;
+    text-shadow: 0 0 10px #ff00ff;
+}
