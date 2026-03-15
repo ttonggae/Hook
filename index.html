@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Neon Hookshot - Global Ranking</title>
+    <title>Neon Hookshot - Full Version</title>
     <style>
         body { margin: 0; overflow: hidden; background: #020205; color: white; font-family: 'Courier New', Courier, monospace; }
         canvas { display: block; }
@@ -19,14 +19,8 @@
         #rankList li { font-size: 15px; margin-bottom: 6px; color: #ffff00; display: flex; justify-content: space-between; }
         #rankList li span.name { color: #fff; font-weight: bold; }
         #nameInputArea { margin-bottom: 20px; }
-        #playerName { 
-            background: #111; border: 2px solid #00ffff; color: #fff; padding: 10px; 
-            font-family: inherit; width: 160px; outline: none; text-align: center; font-size: 16px;
-        }
-        #submitBtn, #rebootBtn {
-            padding: 12px 24px; background: transparent; color: #00ffff; border: 2px solid #00ffff;
-            font-family: inherit; font-weight: bold; cursor: pointer; transition: 0.3s; margin: 5px;
-        }
+        #playerName { background: #111; border: 2px solid #00ffff; color: #fff; padding: 10px; font-family: inherit; width: 160px; outline: none; text-align: center; font-size: 16px; }
+        #submitBtn, #rebootBtn { padding: 12px 24px; background: transparent; color: #00ffff; border: 2px solid #00ffff; font-family: inherit; font-weight: bold; cursor: pointer; transition: 0.3s; margin: 5px; }
         #submitBtn:hover { background: #00ffff; color: #000; box-shadow: 0 0 15px #00ffff; }
         #rebootBtn { color: #ff3333; border-color: #ff3333; display: none; }
         #rebootBtn:hover { background: #ff3333; color: white; box-shadow: 0 0 15px #ff3333; }
@@ -51,8 +45,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToLast } 
-               from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBBBFWrlHqn0o67pnx2Fzq70YD_NOv_sxo",
@@ -61,7 +54,7 @@
             storageBucket: "hook-ee923.firebasestorage.app",
             messagingSenderId: "1043446793127",
             appId: "1:1043446793127:web:32112b9c8e5cb29ef92c82",
-            databaseURL: "https://hook-ee923-default-rtdb.firebaseio.com/" // 주소 재확인 완료
+            databaseURL: "https://hook-ee923-default-rtdb.firebaseio.com/"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -86,25 +79,56 @@
         const player = { x: 400, y: canvas.height/2, vx: 0, vy: 0, size: 22, color: '#00ffff', onGround: false, alive: true };
         const hook = { active: false, x: 0, y: 0, length: 0 };
 
-        obstacles.push({ x: 0, y: canvas.height/2 + 100, w: 1200, h: 40, type: 'platform' });
-        
-        window.addEventListener('mousemove', e => { 
-            // 마우스 위치 업데이트 로직 수정
-            mousePos.x = e.clientX; 
-            mousePos.y = e.clientY; 
-        });
+        // --- 사운드 시스템 복구 ---
+        let audioCtx, windGain;
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const noise = audioCtx.createBuffer(1, 2 * audioCtx.sampleRate, audioCtx.sampleRate);
+            const output = noise.getChannelData(0);
+            for (let i = 0; i < noise.length; i++) output[i] = Math.random() * 2 - 1;
+            const source = audioCtx.createBufferSource(); source.buffer = noise; source.loop = true;
+            const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
+            windGain = audioCtx.createGain(); windGain.gain.value = 0;
+            source.connect(filter); filter.connect(windGain); windGain.connect(audioCtx.destination);
+            source.start();
+        }
 
+        function playSound(f, t, d, v) {
+            if (!audioCtx || isGameOver) return;
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = f; o.frequency.setValueAtTime(t, audioCtx.currentTime);
+            g.gain.setValueAtTime(v, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d);
+            o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
+        }
+
+        function playPazic() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            for(let i=0; i<3; i++){
+                const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+                o.type = i%2===0?'sawtooth':'square';
+                o.frequency.setValueAtTime(2000 + Math.random()*2000, now + (i*0.05));
+                g.gain.setValueAtTime(0.2, now + (i*0.05));
+                g.gain.linearRampToValueAtTime(0, now + 0.1 + (i*0.05));
+                o.connect(g); g.connect(audioCtx.destination);
+                o.start(now + (i*0.05)); o.stop(now + 0.2 + (i*0.05));
+            }
+        }
+
+        obstacles.push({ x: 0, y: canvas.height/2 + 100, w: 1200, h: 40, type: 'platform' });
+        window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
         window.addEventListener('keydown', e => {
             keys[e.code] = true;
             if (isGameOver && canReboot && e.code === 'Space') location.reload();
-            if (!isStarted && (keys['KeyA'] || keys['KeyD'] || keys['Space'])) isStarted = true;
+            if (!isStarted && (keys['KeyA'] || keys['KeyD'] || keys['Space'])) { isStarted = true; initAudio(); }
         });
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         window.addEventListener('mousedown', e => {
-            if (isGameOver || !player.alive) return; if (!isStarted) isStarted = true;
+            initAudio(); if (isGameOver || !player.alive) return;
             const sx = player.x+11, sy = player.y+11;
-            // 월드 좌표 기준으로 각도 계산 (마우스 위치 + 카메라 이동량)
             const ang = Math.atan2(e.clientY-sy, (e.clientX + cameraX)-sx);
             const tx = sx + Math.cos(ang)*maxHookDist, ty = sy + Math.sin(ang)*maxHookDist;
             let hit = null, minT = 2.0;
@@ -115,16 +139,17 @@
             if (hit) {
                 hook.active = true; hook.x = hit.x; hook.y = hit.y;
                 hook.length = Math.sqrt((hook.x-sx)**2 + (hook.y-sy)**2);
-            }
+                playSound('square', 800, 0.05, 0.2);
+            } else { playSound('sawtooth', 200, 0.1, 0.1); }
         });
         window.addEventListener('mouseup', () => hook.active = false);
 
         function getRayIntersection(x1, y1, x2, y2, obs) {
             const dx = x2 - x1, dy = y2 - y1;
-            const l = obs.x, r = obs.x + obs.w, t = obs.y, b = obs.h === 35 ? obs.y + obs.h : 2000;
+            const l = obs.x, r = obs.x + obs.w, t = obs.y, b = obs.y + obs.h;
             let tMin = -Infinity, tMax = Infinity;
             if (dx !== 0) { let t1 = (l - x1) / dx, t2 = (r - x1) / dx; tMin = Math.max(tMin, Math.min(t1, t2)); tMax = Math.min(tMax, Math.max(t1, t2)); }
-            if (dy !== 0) { let t1 = (obs.y - y1) / dy, t2 = (obs.y + obs.h - y1) / dy; tMin = Math.max(tMin, Math.min(t1, t2)); tMax = Math.min(tMax, Math.max(t1, t2)); }
+            if (dy !== 0) { let t1 = (t - y1) / dy, t2 = (b - y1) / dy; tMin = Math.max(tMin, Math.min(t1, t2)); tMax = Math.min(tMax, Math.max(t1, t2)); }
             if (tMax >= tMin && tMax > 0 && tMin < 1) return { x: x1 + (tMin < 0 ? 0 : tMin) * dx, y: y1 + (tMin < 0 ? 0 : tMin) * dy, t: tMin < 0 ? 0 : tMin };
             return null;
         }
@@ -132,7 +157,7 @@
         function update() {
             if (isGameOver) { particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; }); return; }
             if (!isStarted) return;
-            if (keys['Space'] && player.onGround) { player.vy = jumpForce; player.onGround = false; }
+            if (keys['Space'] && player.onGround) { player.vy = jumpForce; player.onGround = false; playSound('sine', 400, 0.2, 0.4); }
             if (keys['KeyA']) player.vx -= 0.8; if (keys['KeyD']) player.vx += 0.8;
             player.vy += gravity; player.vx *= 0.97; player.vy *= 0.99;
             if (hook.active) {
@@ -145,6 +170,10 @@
                 }
             }
             player.x += player.vx; checkCollisions(true); player.y += player.vy; checkCollisions(false);
+            if (windGain) {
+                const s = Math.sqrt(player.vx**2 + player.vy**2);
+                windGain.gain.setTargetAtTime((!player.onGround && s > 5) ? Math.min(0.2, s*0.01) : 0, audioCtx.currentTime, 0.1);
+            }
             cameraX += (player.x - cameraX - 400) * 0.15;
             deadlineX += 6.5 + (Math.max(0, player.x - deadlineX) * 0.012);
             if (player.y > canvas.height + 500 || player.x < deadlineX) finishGame();
@@ -156,7 +185,7 @@
         function spawnChunk() {
             const spacing = 300 + Math.random() * 300, type = Math.random() > 0.35 ? 'platform' : 'danger';
             let w, h, y;
-            if (type === 'danger') { w = 60; h = 300 + Math.random()*200; y = 0; }
+            if (type === 'danger') { w = 60; h = 250 + Math.random()*150; y = 0; }
             else { w = 200 + Math.random()*200; h = 35; y = 250 + Math.random()*(canvas.height-400); }
             obstacles.push({ x: lastSpawnX + spacing, y: y, w: w, h: h, type: type });
             lastSpawnX += spacing;
@@ -174,6 +203,8 @@
 
         function finishGame() {
             if(isGameOver) return; isGameOver = true; player.alive = false;
+            if (windGain) windGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            playPazic();
             for (let i=0; i<25; i++) particles.push({ x: player.x+11-cameraX, y: player.y+11, vx: (Math.random()-0.5)*14, vy: (Math.random()-0.5)*14, size: Math.random()*7+2, life: 1, color: Math.random()>0.5?'#ff00ff':'#00ffff' });
             finalScoreText.innerText = score;
             msgElement.style.display = 'block';
@@ -198,7 +229,7 @@
             const newRef = push(ref(db, 'scores'));
             set(newRef, { name: name, score: score }).then(() => {
                 document.getElementById('nameInputArea').innerHTML = "<p style='color:#00ffff; font-weight:bold;'>SCORE SYNCHRONIZED</p>";
-            }).catch(e => console.error("Upload Error:", e));
+            });
         };
 
         function draw() {
@@ -210,23 +241,18 @@
 
             const px = player.x-cameraX+11, py = player.y+11;
             
-            // --- 조준선 그리기 로직 수정 ---
-            if (!isGameOver) {
-                // 마우스의 월드 좌표 계산 (마우스 위치 + 현재 카메라 위치)
+            // --- 조준선: 훅이 비활성화일 때만 표시 ---
+            if (!isGameOver && player.alive && !hook.active) {
                 const worldMouseX = mousePos.x + cameraX;
                 const ang = Math.atan2(mousePos.y - py, worldMouseX - (player.x+11));
-                
                 let canHit = false;
                 const tx = (player.x+11) + Math.cos(ang)*maxHookDist;
                 const ty = (player.y+11) + Math.sin(ang)*maxHookDist;
-                
                 for (let o of obstacles) if (getRayIntersection(player.x+11, player.y+11, tx, ty, o)) { canHit = true; break; }
-                
                 ctx.save(); ctx.beginPath(); ctx.setLineDash([8, 6]);
                 ctx.moveTo(px, py);
                 ctx.lineTo(px + Math.cos(ang)*maxHookDist, py + Math.sin(ang)*maxHookDist);
-                ctx.strokeStyle = canHit ? '#ffff00' : '#440000'; 
-                ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
+                ctx.strokeStyle = canHit ? '#ffff00' : '#440000'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
             }
 
             obstacles.forEach(o => {
