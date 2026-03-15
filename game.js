@@ -2,9 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToFirst, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { map1 } from './SpeedrunMap/map1.js';
 
-const mapData = {
-    map1: map1
-};
+const mapData = { map1: map1 };
 
 const firebaseConfig = {
     apiKey: "AIzaSyBBBFWrlHqn0o67pnx2Fzq70YD_NOv_sxo",
@@ -20,7 +18,8 @@ const db = getDatabase(app);
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-let gameLoopId = null, score = 0, isGameOver = false, isStarted = false;
+// 🌟 가속 버그 원천 차단 변수 (isLoopRunning)
+let isLoopRunning = false, score = 0, isGameOver = false, isStarted = false;
 let currentGameMode = 'infinite', currentMapId = 'map1';
 let cameraX = 0, deadlineX = -600, mousePos = { x: 0, y: 0 }, lastSpawnX = 1200;
 let particles = [], obstacles = [], keys = {}, guideOpacity = 1, startTime = 0, canReboot = false;
@@ -52,7 +51,6 @@ function playSound(f, t, d, v) {
     o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
 }
 
-// 🌟 랭킹 표시 시스템 🌟
 function showMainMenuRankings() {
     const leftPanel = document.getElementById('ranking-left');
     const rightPanel = document.getElementById('ranking-right');
@@ -76,7 +74,6 @@ function showMainMenuRankings() {
         onValue(query(ref(db, `scores/speedrun/${mId}`), orderByChild('score'), limitToFirst(3)), (snapshot) => {
             let sorted = snapshot.val() ? Object.values(snapshot.val()).sort((a,b) => a.score - b.score) : [];
             let html = `<div class="map-title">[ ${mId.toUpperCase()} ]</div><ul class="ranking-list">`;
-            // NO DATA 글자도 쨍하게 보이게 수정
             if (sorted.length === 0) html += `<li style="color:#ffcc00; justify-content:center;">NO DATA</li>`;
             sorted.forEach((s,i) => html += `<li style="color:#00ffff;"><span>${i+1}. ${s.name}</span><span>${s.score}s</span></li>`);
             html += `</ul>`;
@@ -120,12 +117,8 @@ window.backToMain = () => {
 };
 
 window.startGame = (mode, mapId = 'map1') => {
-    if (gameLoopId) {
-        cancelAnimationFrame(gameLoopId);
-        gameLoopId = null;
-    }
-    
     initAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     
     document.getElementById('main-menu').style.display = 'none';
     document.getElementById('map-selection').style.display = 'none';
@@ -134,6 +127,18 @@ window.startGame = (mode, mapId = 'map1') => {
     document.getElementById('restart-guide').style.display = 'none';
     document.getElementById('ranking-left').style.display = 'none';
     document.getElementById('ranking-right').style.display = 'none';
+    
+    // UI 및 버튼 복구
+    const nameInput = document.getElementById('playerName');
+    const btn = document.getElementById('submitBtn');
+    if (nameInput && btn) {
+        nameInput.style.display = 'inline-block'; 
+        nameInput.value = ''; 
+        btn.innerText = "UPLOAD DATA";
+        btn.disabled = false;
+        btn.style.color = "#00ffff";
+        btn.style.borderColor = "#00ffff";
+    }
     
     currentGameMode = mode;
     currentMapId = mapId;
@@ -154,14 +159,18 @@ window.startGame = (mode, mapId = 'map1') => {
         document.getElementById('unit').innerText = "m";
     }
     
-    gameLoop();
+    // 🌟 가속 버그 원천 차단: 엔진 시동은 무조건 한 번만!
+    if (!isLoopRunning) {
+        isLoopRunning = true;
+        gameLoop();
+    }
 };
 
 function gameLoop() { 
-    if (!isStarted) return; 
+    requestAnimationFrame(gameLoop); 
+    if (!isStarted) return;
     update(); 
     draw(); 
-    gameLoopId = requestAnimationFrame(gameLoop); 
 }
 
 function update() {
@@ -185,6 +194,9 @@ function update() {
 
     player.x += player.vx; checkCollisions(true);
     if(isGameOver) return; 
+    
+    player.onGround = false; // 🌟 공중 점프 방지 🌟
+
     player.y += player.vy; checkCollisions(false);
     if(isGameOver) return;
     
@@ -315,18 +327,22 @@ function finishGame(isWin) {
     }, 1000);
 }
 
+// 🌟 오디오 기상 및 입력 핸들링
 window.addEventListener('keydown', e => { 
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     keys[e.code] = true; 
     if (isGameOver && canReboot && e.code === 'Space') {
         canReboot = false; 
         window.startGame(currentGameMode, currentMapId); 
     }
 });
-
 window.addEventListener('keyup', e => keys[e.code] = false);
 window.addEventListener('mousemove', e => { mousePos.x = e.clientX; mousePos.y = e.clientY; });
 window.addEventListener('mousedown', e => {
-    if (!audioCtx) initAudio(); if (!isStarted || isGameOver) return;
+    if (!audioCtx) initAudio(); 
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    if (!isStarted || isGameOver) return;
     const sx = player.x+11, sy = player.y+11, ang = Math.atan2(e.clientY - sy, (e.clientX + cameraX) - sx);
     const tx = sx + Math.cos(ang)*hook.maxDist, ty = sy + Math.sin(ang)*hook.maxDist;
     let hit = null, minT = 1.0;
@@ -340,8 +356,28 @@ window.addEventListener('mousedown', e => {
 });
 window.addEventListener('mouseup', () => hook.active = false);
 
+// 🌟 Firebase 업로드 및 UI 처리
 document.getElementById('submitBtn').onclick = () => {
-    const name = document.getElementById('playerName').value.trim().toUpperCase() || "ANON";
+    const nameInput = document.getElementById('playerName');
+    const name = nameInput.value.trim().toUpperCase() || "ANON";
     const path = currentGameMode === 'infinite' ? 'scores/infinite' : `scores/speedrun/${currentMapId}`;
-    set(push(ref(db, path)), { name, score: parseFloat(score) }).then(() => { document.getElementById('nameInputArea').innerHTML = "<p style='color:#00ffff'>UPLOADED!</p>"; });
+    const finalScore = parseFloat(score);
+    const btn = document.getElementById('submitBtn');
+
+    btn.innerText = "UPLOADING...";
+    btn.disabled = true;
+
+    set(push(ref(db, path)), { name: name, score: finalScore })
+        .then(() => { 
+            nameInput.style.display = 'none'; 
+            btn.innerText = "UPLOAD COMPLETE!";
+            btn.style.color = "#00ff00";
+            btn.style.borderColor = "#00ff00";
+        })
+        .catch((error) => {
+            console.error("Firebase Error: ", error);
+            btn.innerText = "UPLOAD FAILED";
+            btn.style.color = "#ff3333";
+            btn.style.borderColor = "#ff3333";
+        });
 };
