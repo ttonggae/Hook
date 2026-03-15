@@ -12,7 +12,6 @@ export const map1 = {
         { x: 5000, y: 400, w: 100, h: 400, type: 'danger' },
         { x: 6000, y: 550, w: 300, h: 40, type: 'platform' },
         { x: 7500, y: 400, w: 80, h: 300, type: 'danger' },
-        { x: 9000, y: 500, w: 1000, h: 60, type: 'platform' },
-        { x: 9500, y: 100, w: 100, h: 400, type: 'goal' }
+        { x: 9000, y: 500, w: 1000, h: 60, type: 'goal' }
     ]
 };
