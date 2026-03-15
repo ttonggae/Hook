@@ -38,13 +38,13 @@ canvas { display: block; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 #restart-guide { display: none; color: #ffff00; margin-top: 20px; font-size: 16px; font-weight: bold; animation: blink 1.5s infinite; letter-spacing: 1px; }
 
-/* 🌟 사이드 랭킹 패널 스타일 (z-index를 250으로 올려서 선글라스 현상 해결!) */
+/* 🌟 사이드 랭킹 패널 스타일 (z-index: 250 적용 완료) */
 .ranking-panel {
     position: absolute; top: 20px; width: 280px; 
-    background: rgba(5, 10, 15, 0.8); 
+    background: rgba(0, 40, 60, 0.85); 
     border: 2px solid #00ffff; 
-    box-shadow: 0 0 20px #00ffff, inset 0 0 10px rgba(0, 255, 255, 0.3); 
-    padding: 15px; z-index: 250; /* 핵심 수정: 메뉴 배경(200)보다 무조건 앞으로! */
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.6), inset 0 0 10px rgba(0, 255, 255, 0.3); 
+    padding: 15px; z-index: 250; 
     display: none; flex-direction: column; 
     max-height: 85vh; overflow-y: auto; pointer-events: none;
     border-radius: 12px;
@@ -52,12 +52,12 @@ canvas { display: block; }
 #ranking-left { left: 20px; }
 #ranking-right { 
     right: 20px; border-color: #ff00ff; 
-    background: rgba(15, 5, 15, 0.8); 
-    box-shadow: 0 0 20px #ff00ff, inset 0 0 10px rgba(255, 0, 255, 0.3); 
+    background: rgba(60, 0, 60, 0.85); 
+    box-shadow: 0 0 20px rgba(255, 0, 255, 0.6), inset 0 0 10px rgba(255, 0, 255, 0.3); 
 }
 
 .ranking-title { 
-    font-size: 22px; color: #ffffff; text-shadow: 0 0 10px #ffffff; 
+    font-size: 22px; color: #ffffff; text-shadow: 0 0 10px #ffffff, 0 0 20px #ffffff; 
     text-align: center; margin-bottom: 15px; border-bottom: 2px solid #fff; 
     padding-bottom: 8px; font-weight: bold; letter-spacing: 1px;
 }
