@@ -18,11 +18,16 @@ const db = getDatabase(app);
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// 🌟 가속 버그 원천 차단 변수 (isLoopRunning)
+// 🌟 가속 버그 & 고주사율 방어 변수
 let isLoopRunning = false, score = 0, isGameOver = false, isStarted = false;
 let currentGameMode = 'infinite', currentMapId = 'map1';
 let cameraX = 0, deadlineX = -600, mousePos = { x: 0, y: 0 }, lastSpawnX = 1200;
 let particles = [], obstacles = [], keys = {}, guideOpacity = 1, startTime = 0, canReboot = false;
+
+// 🌟 프레임 고정을 위한 변수 (60FPS 제한)
+let lastTime = 0;
+const FPS = 60;
+const frameInterval = 1000 / FPS;
 
 const player = { x: 400, y: 300, vx: 0, vy: 0, size: 22, color: '#00ffff', onGround: false, alive: true };
 const hook = { active: false, x: 0, y: 0, length: 0, maxDist: 700 };
@@ -128,7 +133,6 @@ window.startGame = (mode, mapId = 'map1') => {
     document.getElementById('ranking-left').style.display = 'none';
     document.getElementById('ranking-right').style.display = 'none';
     
-    // UI 및 버튼 복구
     const nameInput = document.getElementById('playerName');
     const btn = document.getElementById('submitBtn');
     if (nameInput && btn) {
@@ -159,18 +163,27 @@ window.startGame = (mode, mapId = 'map1') => {
         document.getElementById('unit').innerText = "m";
     }
     
-    // 🌟 가속 버그 원천 차단: 엔진 시동은 무조건 한 번만!
+    // 루프 실행 제어 (절대 한 번만 실행됨)
     if (!isLoopRunning) {
         isLoopRunning = true;
-        gameLoop();
+        lastTime = performance.now(); 
+        requestAnimationFrame(gameLoop); 
     }
 };
 
-function gameLoop() { 
+// 🌟 프레임 고정 (60FPS) 로직
+function gameLoop(currentTime) { 
     requestAnimationFrame(gameLoop); 
+    
     if (!isStarted) return;
-    update(); 
-    draw(); 
+
+    const deltaTime = currentTime - lastTime;
+    
+    if (deltaTime >= frameInterval) {
+        lastTime = currentTime - (deltaTime % frameInterval); 
+        update(); 
+        draw(); 
+    }
 }
 
 function update() {
@@ -195,7 +208,7 @@ function update() {
     player.x += player.vx; checkCollisions(true);
     if(isGameOver) return; 
     
-    player.onGround = false; // 🌟 공중 점프 방지 🌟
+    player.onGround = false; 
 
     player.y += player.vy; checkCollisions(false);
     if(isGameOver) return;
@@ -327,7 +340,6 @@ function finishGame(isWin) {
     }, 1000);
 }
 
-// 🌟 오디오 기상 및 입력 핸들링
 window.addEventListener('keydown', e => { 
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     keys[e.code] = true; 
@@ -356,7 +368,6 @@ window.addEventListener('mousedown', e => {
 });
 window.addEventListener('mouseup', () => hook.active = false);
 
-// 🌟 Firebase 업로드 및 UI 처리
 document.getElementById('submitBtn').onclick = () => {
     const nameInput = document.getElementById('playerName');
     const name = nameInput.value.trim().toUpperCase() || "ANON";
