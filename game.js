@@ -204,22 +204,37 @@ function update() {
     if (keys['KeyA']) player.vx -= 0.8; if (keys['KeyD']) player.vx += 0.8;
     player.vy += 0.6; player.vx *= 0.97;
 
+    // 🌟 [순간이동 버그 수정] 훅의 위치 강제 변경 대신, 이번 프레임의 최종 목표 위치를 먼저 계산
+    let nextX = player.x + player.vx;
+    let nextY = player.y + player.vy;
+
     if (hook.active) {
         if (keys['ShiftLeft']) hook.length = Math.max(20, hook.length - 12);
-        let dx = (player.x+11)-hook.x, dy = (player.y+11)-hook.y, dist = Math.sqrt(dx*dx+dy*dy);
+        // 목표 위치를 기준으로 훅의 장력 계산
+        let dx = (nextX + 11) - hook.x, dy = (nextY + 11) - hook.y, dist = Math.sqrt(dx*dx + dy*dy);
         if (dist > hook.length) {
-            let nx = dx/dist, ny = dy/dist;
-            player.x = hook.x + nx*hook.length - 11; player.y = hook.y + ny*hook.length - 11;
-            let dot = player.vx*nx + player.vy*ny; if (dot > 0) { player.vx -= dot*nx; player.vy -= dot*ny; }
+            let nx = dx / dist, ny = dy / dist;
+            nextX = hook.x + nx * hook.length - 11; 
+            nextY = hook.y + ny * hook.length - 11;
+            let dot = player.vx * nx + player.vy * ny; 
+            if (dot > 0) { player.vx -= dot * nx; player.vy -= dot * ny; }
         }
     }
 
-    player.x += player.vx; checkCollisions(true);
+    // 🌟 계산된 최종 이동량(실제 속도)을 추출
+    let moveX = nextX - player.x;
+    let moveY = nextY - player.y;
+
+    // X축 먼저 이동 후 벽 충돌 검사
+    player.x += moveX; 
+    checkCollisions(true, moveX); // 어느 방향으로 움직였는지(moveX) 알려줌
     if(isGameOver) return; 
     
     player.onGround = false; 
 
-    player.y += player.vy; checkCollisions(false);
+    // Y축 이동 후 바닥/천장 충돌 검사
+    player.y += moveY; 
+    checkCollisions(false, moveY);
     if(isGameOver) return;
     
     cameraX += (player.x - cameraX - 400) * 0.15;
@@ -241,13 +256,27 @@ function update() {
     if (player.y > canvas.height + 600) finishGame(false);
 }
 
-function checkCollisions(ax) {
+// 🌟 충돌 시 튕겨낼 방향을 정확히 잡도록 delta 매개변수 추가
+function checkCollisions(ax, delta) {
     for (let o of obstacles) {
         if (player.x < o.x + o.w && player.x + player.size > o.x && player.y < o.y + o.h && player.y + player.size > o.y) {
             if (o.type === 'goal') { finishGame(true); return; }
             if (o.type === 'danger') { finishGame(false); return; }
-            if (ax) { player.x = player.vx > 0 ? o.x - player.size : o.x + o.w; player.vx = 0; }
-            else { if (player.vy > 0) { player.y = o.y - player.size; player.onGround = true; } player.vy = 0; }
+            
+            if (ax) { 
+                // 좌우 벽에 박았을 때 처리
+                player.x = delta > 0 ? o.x - player.size : o.x + o.w; 
+                player.vx = 0; 
+            } else { 
+                // 위아래 바닥/천장에 박았을 때 처리
+                if (delta > 0) { 
+                    player.y = o.y - player.size; // 떨어지다가 바닥에 닿음
+                    player.onGround = true; 
+                } else { 
+                    player.y = o.y + o.h; // 올라가다가 천장에 머리를 박음 (천장 통과/순간이동 방지!)
+                } 
+                player.vy = 0; 
+            }
         }
     }
 }
