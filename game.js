@@ -381,7 +381,11 @@ function finishGame(isWin) {
 window.addEventListener('keydown', e => { 
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     keys[e.code] = true; 
+    
     if (isGameOver && canReboot && e.code === 'Space') {
+        // 🌟 [버그 수정] 현재 커서가 입력창(INPUT)에 있다면 재시작을 막음!
+        if (document.activeElement.tagName === 'INPUT') return; 
+        
         canReboot = false; 
         window.startGame(currentGameMode, currentMapId); 
     }
