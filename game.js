@@ -1,5 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToFirst, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+// 🌟 [추가됨] 인증(Auth) 기능 불러오기
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { map1 } from './SpeedrunMap/map1.js';
 
 const mapData = { map1: map1 };
@@ -15,16 +17,22 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+// 🌟 [추가됨] 게임 실행 시 백그라운드에서 조용히 '익명 인증' 받기
+const auth = getAuth(app);
+signInAnonymously(auth).then(() => {
+    console.log("System: 보안 연결 가동. 정상 클라이언트 확인.");
+}).catch((error) => {
+    console.error("System: 보안 연결 실패", error);
+});
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// 🌟 가속 버그 & 고주사율 방어 변수
 let isLoopRunning = false, score = 0, isGameOver = false, isStarted = false;
 let currentGameMode = 'infinite', currentMapId = 'map1';
 let cameraX = 0, deadlineX = -600, mousePos = { x: 0, y: 0 }, lastSpawnX = 1200;
 let particles = [], obstacles = [], keys = {}, guideOpacity = 1, startTime = 0, canReboot = false;
 
-// 🌟 프레임 고정을 위한 변수 (60FPS 제한)
 let lastTime = 0;
 const FPS = 60;
 const frameInterval = 1000 / FPS;
@@ -32,6 +40,7 @@ const frameInterval = 1000 / FPS;
 const player = { x: 400, y: 300, vx: 0, vy: 0, size: 22, color: '#00ffff', onGround: false, alive: true };
 const hook = { active: false, x: 0, y: 0, length: 0, maxDist: 700 };
 
+// ... (아래쪽 initAudio() 부터는 기존 코드 그대로 유지) ...
 let audioCtx, windGain;
 function initAudio() {
     if (audioCtx) return;
