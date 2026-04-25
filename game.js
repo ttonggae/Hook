@@ -1,10 +1,18 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToFirst, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-// 🌟 [추가됨] 인증(Auth) 기능 불러오기
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getDatabase, ref, push, set, onValue, query, orderByChild, limitToFirst, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { map1 } from './SpeedrunMap/map1.js';
 
 const mapData = { map1: map1 };
+const SCORE_LIMITS = {
+    infinite: { min: 0, max: 100000 },
+    speedrun: { min: 1, max: 600 }
+};
+
+// Fill this with a Firebase App Check reCAPTCHA v3 site key, then enable
+// Realtime Database enforcement in the Firebase console.
+const RECAPTCHA_V3_SITE_KEY = "";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBBBFWrlHqn0o67pnx2Fzq70YD_NOv_sxo",
@@ -15,32 +23,34 @@ const firebaseConfig = {
     appId: "1:1043446793127:web:32112b9c8e5cb29ef92c82"
 };
 const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-// 🌟 [추가됨] 게임 실행 시 백그라운드에서 조용히 '익명 인증' 받기
+if (RECAPTCHA_V3_SITE_KEY) {
+    initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider(RECAPTCHA_V3_SITE_KEY),
+        isTokenAutoRefreshEnabled: true
+    });
+}
 const auth = getAuth(app);
-signInAnonymously(auth).then(() => {
-    console.log("System: 보안 연결 가동. 정상 클라이언트 확인.");
-}).catch((error) => {
-    console.error("System: 보안 연결 실패", error);
-});
+const db = getDatabase(app);
+const authReady = signInAnonymously(auth)
+    .then((credential) => credential.user)
+    .catch((error) => {
+        console.error("Firebase Auth Error: ", error);
+        return null;
+    });
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// 🌟 가속 버그 원천 차단 변수 (isLoopRunning)
 let isLoopRunning = false, score = 0, isGameOver = false, isStarted = false;
 let currentGameMode = 'infinite', currentMapId = 'map1';
 let cameraX = 0, deadlineX = -600, mousePos = { x: 0, y: 0 }, lastSpawnX = 1200;
 let particles = [], obstacles = [], keys = {}, guideOpacity = 1, startTime = 0, canReboot = false;
-
-let lastTime = 0;
-const FPS = 60;
-const frameInterval = 1000 / FPS;
+let finishedRun = null;
 
 const player = { x: 400, y: 300, vx: 0, vy: 0, size: 22, color: '#00ffff', onGround: false, alive: true };
 const hook = { active: false, x: 0, y: 0, length: 0, maxDist: 700 };
 
-// ... (아래쪽 initAudio() 부터는 기존 코드 그대로 유지) ...
 let audioCtx, windGain;
 function initAudio() {
     if (audioCtx) return;
@@ -65,6 +75,45 @@ function playSound(f, t, d, v) {
     o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
 }
 
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
+function normalizeName(name) {
+    const normalized = String(name || "ANON").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "").slice(0, 8);
+    return normalized || "ANON";
+}
+
+function normalizeScore(value, mode) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    const limits = SCORE_LIMITS[mode];
+    const scoreValue = mode === 'speedrun' ? Math.round(number * 100) / 100 : Math.floor(number);
+    if (scoreValue < limits.min || scoreValue > limits.max) return null;
+    return scoreValue;
+}
+
+function getValidScores(snapshot, mode, mapId = null) {
+    const scores = snapshot.val() ? Object.values(snapshot.val()) : [];
+    return scores
+        .filter((record) => record && typeof record === 'object')
+        .map((record) => ({
+            name: normalizeName(record.name),
+            score: normalizeScore(record.score, mode),
+            mode: record.mode,
+            mapId: record.mapId
+        }))
+        .filter((record) => record.score !== null)
+        .filter((record) => !record.mode || record.mode === mode)
+        .filter((record) => mode !== 'speedrun' || !record.mapId || record.mapId === mapId);
+}
+
 function showMainMenuRankings() {
     const leftPanel = document.getElementById('ranking-left');
     const rightPanel = document.getElementById('ranking-right');
@@ -72,10 +121,10 @@ function showMainMenuRankings() {
     rightPanel.style.display = 'flex';
 
     onValue(query(ref(db, 'scores/infinite'), orderByChild('score'), limitToLast(10)), (snapshot) => {
-        let sorted = snapshot.val() ? Object.values(snapshot.val()).sort((a,b) => b.score - a.score) : [];
+        let sorted = getValidScores(snapshot, 'infinite').sort((a,b) => b.score - a.score);
         leftPanel.innerHTML = `
             <div class="ranking-title">INFINITE TOP 10</div>
-            <ul class="ranking-list">${sorted.map((s,i) => `<li><span>${i+1}. ${s.name}</span><span>${s.score}m</span></li>`).join('')}</ul>
+            <ul class="ranking-list">${sorted.map((s,i) => `<li><span>${i+1}. ${escapeHtml(s.name)}</span><span>${s.score}m</span></li>`).join('')}</ul>
         `;
     });
 
@@ -86,10 +135,10 @@ function showMainMenuRankings() {
         rightPanel.appendChild(mapContainer);
 
         onValue(query(ref(db, `scores/speedrun/${mId}`), orderByChild('score'), limitToFirst(3)), (snapshot) => {
-            let sorted = snapshot.val() ? Object.values(snapshot.val()).sort((a,b) => a.score - b.score) : [];
+            let sorted = getValidScores(snapshot, 'speedrun', mId).sort((a,b) => a.score - b.score);
             let html = `<div class="map-title">[ ${mId.toUpperCase()} ]</div><ul class="ranking-list">`;
             if (sorted.length === 0) html += `<li style="color:#ffcc00; justify-content:center;">NO DATA</li>`;
-            sorted.forEach((s,i) => html += `<li style="color:#00ffff;"><span>${i+1}. ${s.name}</span><span>${s.score}s</span></li>`);
+            sorted.forEach((s,i) => html += `<li style="color:#00ffff;"><span>${i+1}. ${escapeHtml(s.name)}</span><span>${s.score}s</span></li>`);
             html += `</ul>`;
             document.getElementById(`rank-${mId}`).innerHTML = html;
         });
@@ -106,7 +155,7 @@ function showResultRanking() {
                          : query(ref(db, path), orderByChild('score'), limitToLast(10));
 
     onValue(q, (snapshot) => {
-        let sorted = snapshot.val() ? Object.values(snapshot.val()) : [];
+        let sorted = getValidScores(snapshot, isSpeedrun ? 'speedrun' : 'infinite', currentMapId);
         if(isSpeedrun) sorted.sort((a,b) => a.score - b.score);
         else sorted.sort((a,b) => b.score - a.score);
         
@@ -114,7 +163,7 @@ function showResultRanking() {
         const unit = isSpeedrun ? 's' : 'm';
         leftPanel.innerHTML = `
             <div class="ranking-title">${title} TOP 10</div>
-            <ul class="ranking-list">${sorted.map((s,i) => `<li><span>${i+1}. ${s.name}</span><span>${s.score}${unit}</span></li>`).join('')}</ul>
+            <ul class="ranking-list">${sorted.map((s,i) => `<li><span>${i+1}. ${escapeHtml(s.name)}</span><span>${s.score}${unit}</span></li>`).join('')}</ul>
         `;
     });
 }
@@ -131,6 +180,9 @@ window.backToMain = () => {
 };
 
 window.startGame = (mode, mapId = 'map1') => {
+    if (!['infinite', 'speedrun'].includes(mode)) return;
+    if (mode === 'speedrun' && !mapData[mapId]) return;
+
     initAudio();
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     
@@ -142,6 +194,7 @@ window.startGame = (mode, mapId = 'map1') => {
     document.getElementById('ranking-left').style.display = 'none';
     document.getElementById('ranking-right').style.display = 'none';
     
+    // UI 및 버튼 복구
     const nameInput = document.getElementById('playerName');
     const btn = document.getElementById('submitBtn');
     if (nameInput && btn) {
@@ -155,7 +208,7 @@ window.startGame = (mode, mapId = 'map1') => {
     
     currentGameMode = mode;
     currentMapId = mapId;
-    isStarted = true; isGameOver = false; canReboot = false;
+    isStarted = true; isGameOver = false; canReboot = false; finishedRun = null;
     player.alive = true; player.x = 400; player.y = 300; player.vx = 0; player.vy = 0;
     cameraX = 0; deadlineX = -600; lastSpawnX = 1200; particles = []; guideOpacity = 1; hook.active = false;
     
@@ -172,27 +225,18 @@ window.startGame = (mode, mapId = 'map1') => {
         document.getElementById('unit').innerText = "m";
     }
     
-    // 루프 실행 제어 (절대 한 번만 실행됨)
+    // 🌟 가속 버그 원천 차단: 엔진 시동은 무조건 한 번만!
     if (!isLoopRunning) {
         isLoopRunning = true;
-        lastTime = performance.now(); 
-        requestAnimationFrame(gameLoop); 
+        gameLoop();
     }
 };
 
-// 🌟 프레임 고정 (60FPS) 로직
-function gameLoop(currentTime) { 
+function gameLoop() { 
     requestAnimationFrame(gameLoop); 
-    
     if (!isStarted) return;
-
-    const deltaTime = currentTime - lastTime;
-    
-    if (deltaTime >= frameInterval) {
-        lastTime = currentTime - (deltaTime % frameInterval); 
-        update(); 
-        draw(); 
-    }
+    update(); 
+    draw(); 
 }
 
 function update() {
@@ -204,37 +248,22 @@ function update() {
     if (keys['KeyA']) player.vx -= 0.8; if (keys['KeyD']) player.vx += 0.8;
     player.vy += 0.6; player.vx *= 0.97;
 
-    // 🌟 [순간이동 버그 수정] 훅의 위치 강제 변경 대신, 이번 프레임의 최종 목표 위치를 먼저 계산
-    let nextX = player.x + player.vx;
-    let nextY = player.y + player.vy;
-
     if (hook.active) {
         if (keys['ShiftLeft']) hook.length = Math.max(20, hook.length - 12);
-        // 목표 위치를 기준으로 훅의 장력 계산
-        let dx = (nextX + 11) - hook.x, dy = (nextY + 11) - hook.y, dist = Math.sqrt(dx*dx + dy*dy);
+        let dx = (player.x+11)-hook.x, dy = (player.y+11)-hook.y, dist = Math.sqrt(dx*dx+dy*dy);
         if (dist > hook.length) {
-            let nx = dx / dist, ny = dy / dist;
-            nextX = hook.x + nx * hook.length - 11; 
-            nextY = hook.y + ny * hook.length - 11;
-            let dot = player.vx * nx + player.vy * ny; 
-            if (dot > 0) { player.vx -= dot * nx; player.vy -= dot * ny; }
+            let nx = dx/dist, ny = dy/dist;
+            player.x = hook.x + nx*hook.length - 11; player.y = hook.y + ny*hook.length - 11;
+            let dot = player.vx*nx + player.vy*ny; if (dot > 0) { player.vx -= dot*nx; player.vy -= dot*ny; }
         }
     }
 
-    // 🌟 계산된 최종 이동량(실제 속도)을 추출
-    let moveX = nextX - player.x;
-    let moveY = nextY - player.y;
-
-    // X축 먼저 이동 후 벽 충돌 검사
-    player.x += moveX; 
-    checkCollisions(true, moveX); // 어느 방향으로 움직였는지(moveX) 알려줌
+    player.x += player.vx; checkCollisions(true);
     if(isGameOver) return; 
     
-    player.onGround = false; 
+    player.onGround = false; // 🌟 공중 점프 방지 🌟
 
-    // Y축 이동 후 바닥/천장 충돌 검사
-    player.y += moveY; 
-    checkCollisions(false, moveY);
+    player.y += player.vy; checkCollisions(false);
     if(isGameOver) return;
     
     cameraX += (player.x - cameraX - 400) * 0.15;
@@ -256,27 +285,13 @@ function update() {
     if (player.y > canvas.height + 600) finishGame(false);
 }
 
-// 🌟 충돌 시 튕겨낼 방향을 정확히 잡도록 delta 매개변수 추가
-function checkCollisions(ax, delta) {
+function checkCollisions(ax) {
     for (let o of obstacles) {
         if (player.x < o.x + o.w && player.x + player.size > o.x && player.y < o.y + o.h && player.y + player.size > o.y) {
             if (o.type === 'goal') { finishGame(true); return; }
             if (o.type === 'danger') { finishGame(false); return; }
-            
-            if (ax) { 
-                // 좌우 벽에 박았을 때 처리
-                player.x = delta > 0 ? o.x - player.size : o.x + o.w; 
-                player.vx = 0; 
-            } else { 
-                // 위아래 바닥/천장에 박았을 때 처리
-                if (delta > 0) { 
-                    player.y = o.y - player.size; // 떨어지다가 바닥에 닿음
-                    player.onGround = true; 
-                } else { 
-                    player.y = o.y + o.h; // 올라가다가 천장에 머리를 박음 (천장 통과/순간이동 방지!)
-                } 
-                player.vy = 0; 
-            }
+            if (ax) { player.x = player.vx > 0 ? o.x - player.size : o.x + o.w; player.vx = 0; }
+            else { if (player.vy > 0) { player.y = o.y - player.size; player.onGround = true; } player.vy = 0; }
         }
     }
 }
@@ -344,6 +359,14 @@ function draw() {
 function finishGame(isWin) {
     if (isGameOver) return;
     isGameOver = true; player.alive = false;
+    const finalScore = normalizeScore(score, currentGameMode);
+    finishedRun = {
+        mode: currentGameMode,
+        mapId: currentMapId,
+        score: finalScore,
+        isWin: currentGameMode === 'infinite' || isWin,
+        uploaded: false
+    };
     
     if (windGain) windGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
     playSound(isWin ? 'sine' : 'square', 150, 0.3, 0.3);
@@ -378,14 +401,11 @@ function finishGame(isWin) {
     }, 1000);
 }
 
+// 🌟 오디오 기상 및 입력 핸들링
 window.addEventListener('keydown', e => { 
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     keys[e.code] = true; 
-    
     if (isGameOver && canReboot && e.code === 'Space') {
-        // 🌟 [버그 수정] 현재 커서가 입력창(INPUT)에 있다면 재시작을 막음!
-        if (document.activeElement.tagName === 'INPUT') return; 
-        
         canReboot = false; 
         window.startGame(currentGameMode, currentMapId); 
     }
@@ -410,18 +430,42 @@ window.addEventListener('mousedown', e => {
 });
 window.addEventListener('mouseup', () => hook.active = false);
 
+// 🌟 Firebase 업로드 및 UI 처리
 document.getElementById('submitBtn').onclick = () => {
     const nameInput = document.getElementById('playerName');
-    const name = nameInput.value.trim().toUpperCase() || "ANON";
-    const path = currentGameMode === 'infinite' ? 'scores/infinite' : `scores/speedrun/${currentMapId}`;
-    const finalScore = parseFloat(score);
+    const name = normalizeName(nameInput.value);
+    const run = finishedRun;
     const btn = document.getElementById('submitBtn');
+
+    if (!run || !run.isWin || run.uploaded || run.score === null) {
+        btn.innerText = "UPLOAD BLOCKED";
+        btn.style.color = "#ff3333";
+        btn.style.borderColor = "#ff3333";
+        return;
+    }
 
     btn.innerText = "UPLOADING...";
     btn.disabled = true;
 
-    set(push(ref(db, path)), { name: name, score: finalScore })
+    authReady
+        .then((user) => {
+            if (!user) throw new Error("Anonymous authentication failed.");
+
+            const isSpeedrun = run.mode === 'speedrun';
+            const path = isSpeedrun ? `scores/speedrun/${run.mapId}` : 'scores/infinite';
+            const payload = {
+                name,
+                score: run.score,
+                uid: user.uid,
+                mode: run.mode,
+                createdAt: serverTimestamp()
+            };
+            if (isSpeedrun) payload.mapId = run.mapId;
+
+            return set(push(ref(db, path)), payload);
+        })
         .then(() => { 
+            run.uploaded = true;
             nameInput.style.display = 'none'; 
             btn.innerText = "UPLOAD COMPLETE!";
             btn.style.color = "#00ff00";
